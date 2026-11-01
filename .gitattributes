@@ -3,6 +3,10 @@
 ###############################################################################
 * text=auto
 
+# The build embeds src/ in its source maps; an LF checkout everywhere keeps them identical
+# between Windows and Linux builds (Rased patches).
+src/** text eol=lf
+
 ###############################################################################
 # Set default behavior for command prompt diff.
 #

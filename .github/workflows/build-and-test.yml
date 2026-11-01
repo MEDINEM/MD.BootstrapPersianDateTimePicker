@@ -1,0 +1,46 @@
+name: Build and test
+
+on:
+  push:
+    branches: [codex/rased-datepicker-fixes]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Lifecycle scripts are not needed: esbuild ships its binary as an optional dependency.
+      - run: npm ci --ignore-scripts
+
+      - name: Type-check and build
+        run: npm run build
+
+      - name: Committed dist matches the source build
+        run: git diff --exit-code -- dist/mds.bs.datetimepicker.js dist/mds.bs.datetimepicker.style.css
+
+      - name: Install browsers
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Regression tests (Chromium, Firefox, WebKit, touch emulation)
+        run: npm test
+        env:
+          CI: '1'
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 7
