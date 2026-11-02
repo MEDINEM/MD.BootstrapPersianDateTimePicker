@@ -609,8 +609,14 @@ data-bs-toggle="dropdown" aria-expanded="false">
     const type = e.type.split('.')[0];
     this.phase = type == 'show' ? 'showing' : type == 'shown' ? 'shown' : type == 'hide' ? 'hiding' : 'hidden';
     if (type == 'show' || type == 'hide') {
+      // کلیک روی روزها از شروع باز شدن پذیرفته می‌شود، نه بعد از پایان انیمیشن
+      if (type == 'show') this.enableEvents();
       // اگر رویداد لغو شود، انیمیشنی شروع نشده است
-      queueMicrotask(() => { if (e.defaultPrevented && this.phase == (type == 'show' ? 'showing' : 'hiding')) this.phase = previous; });
+      queueMicrotask(() => {
+        if (!e.defaultPrevented || this.phase != (type == 'show' ? 'showing' : 'hiding')) return;
+        this.phase = previous;
+        if (type == 'show') this.disableEvents();
+      });
       return;
     }
     if (this.disposeWhenSettled) {
@@ -2163,6 +2169,7 @@ data-bs-toggle="dropdown" aria-expanded="false">
     const setting = instance.setting;
     this.hideYearsBox(element, setting);
     this.getPickerContainer()?.addEventListener('keydown', this.keydownEvent);
+    this.enableEvents();
   }
   private popoverOrModalShownEvent = (e: Event): void => {
     if (e.target !== this.element && e.target !== this.getModal()) return;
@@ -2211,8 +2218,8 @@ data-bs-toggle="dropdown" aria-expanded="false">
   }
   private enableEvents(): void {
     if (this.setting.inLine || this.disposed) return;
-    // شنونده‌ها همان لحظه‌ی باز شدن ثبت می‌شوند؛ با تاخیر، کلیک‌های اول روی روزها گم می‌شد و
-    // اگر تقویم زودتر بسته می‌شد، شنونده‌ها بعد از بسته شدن اضافه می‌شدند و باقی می‌ماندند
+    // شنونده‌ها از رویداد show ثبت می‌شوند (و برای محتوای تازه دوباره در inserted و shown)؛ با تاخیر، کلیک‌های
+    // اول روی روزها گم می‌شد و اگر تقویم زودتر بسته می‌شد، شنونده‌ها بعد از بسته شدن اضافه می‌شدند و باقی می‌ماندند
     if (!this.documentEventsEnabled) {
       this.documentEventsEnabled = true;
       document.addEventListener('click', this.selectCorrectClickEvent, false);

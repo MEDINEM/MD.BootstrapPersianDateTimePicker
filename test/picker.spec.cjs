@@ -178,6 +178,19 @@ test.describe('Event listeners', () => {
     expect(await page.inputValue('#a_value')).toBe('2025-10-02');
   });
 
+  test('reproduction: a day tapped while the calendar is still fading in is chosen', async ({ page }) => {
+    await makeReady(page, 'a');
+    await page.evaluate(() => {
+      document.getElementById('a').click();
+      // The next frame: the popover is on screen and still in Bootstrap's opening transition.
+      requestAnimationFrame(() => T.tip('a').querySelector('td[data-day][data-number="14040710"]').click());
+    });
+    await page.waitForFunction(() => (T.log.a || []).includes('hidden'), null, { timeout: 3000 }).catch(() => null);
+    await page.waitForTimeout(300);
+    expect(await page.inputValue('#a_value')).toBe('2025-10-02');
+    expect(await errors(page)).toEqual([]);
+  });
+
   test('reproduction: a picker closed quickly does not handle clicks in another picker', async ({ page }) => {
     await makeReady(page, 'a');
     await makeReady(page, 'b', { selectedDateToShow: new Date(2026, 2, 10) }); // Esfand 1404
