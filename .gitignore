@@ -164,7 +164,8 @@ ClientBin/
 *.pfx
 *.publishsettings
 node_modules/
-package-lock.json
+# The lockfile is tracked so builds are reproducible (Rased patches).
+test-results/
 
 # RIA/Silverlight projects
 Generated_Code/

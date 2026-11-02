@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MdsPersianDateTimePicker regression harness</title>
+  <link rel="stylesheet" href="../node_modules/bootstrap/dist/css/bootstrap.rtl.min.css">
+  <link rel="stylesheet" href="../dist/mds.bs.datetimepicker.style.css">
+</head>
+<body>
+  <main id="root" class="container py-3"></main>
+  <script src="../node_modules/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="../dist/mds.bs.datetimepicker.js"></script>
+  <script src="harness.js"></script>
+  <script>
+    // Every page error is kept so a test can assert that none happened, including the ones
+    // Bootstrap raises from its own transition callbacks after a test step has returned.
+    window.pageErrors = [];
+    window.addEventListener('error', e => window.pageErrors.push(String(e.message)));
+    window.addEventListener('unhandledrejection', e => window.pageErrors.push(String(e.reason)));
+  </script>
+</body>
+</html>

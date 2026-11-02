@@ -4,6 +4,7 @@ const TerserPlugin = require('terser-webpack-plugin');
 const CssMinimizerPlugin = require('css-minimizer-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const RemoveEmptyScriptsPlugin = require('webpack-remove-empty-scripts');
+const { version } = require('./package.json');
 
 module.exports = (env, argv) => {
   const isDev = Boolean(env.WEBPACK_SERVE) || argv.mode === 'development';
@@ -60,7 +61,6 @@ module.exports = (env, argv) => {
       clean: true
     },
     target: 'web',
-    ...(env.WEBPACK_SERVE ? {} : { watch: true }),
     devServer: {
       hot: true,
       static: {
@@ -90,9 +90,11 @@ module.exports = (env, argv) => {
         banner: `
 Bootstrap 5+ Persian Date Time Picker
 https://github.com/Mds92/MD.BootstrapPersianDateTimePicker
-version : 4.4.0
+version : ${version}
 Written By Mohammad Dayyan, Mordad 1397 - 1404
 mds_soft@yahoo.com - @mds1401
+This build is upstream v5.0.1 plus Rased patches, not an official upstream release:
+https://github.com/MEDINEM/MD.BootstrapPersianDateTimePicker/tree/codex/rased-datepicker-fixes
       `
       })
     ]

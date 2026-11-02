@@ -22,10 +22,18 @@ export class MdsPersianDateTimePicker {
     this.setting.selectedDate = setting.selectedDate ? MdsPersianDateTimePicker.getClonedDate(setting.selectedDate) : null;
     this.setting.selectedDateToShow = MdsPersianDateTimePicker.getClonedDate(setting.selectedDateToShow) ?? new Date();
 
+    // ساختن دوباره‌ی تقویم روی همان المان، نمونه‌ی قبلی را از بین می‌برد؛
+    // در غیر این صورت نمونه‌ی قبلی با شنونده‌ها و تایمرهایش فعال می‌ماند
+    const previousGuid = element.getAttribute('data-mds-dtp-guid');
+    if (previousGuid)
+      MdsPersianDateTimePickerData.get(previousGuid)?.dispose();
+
     this.guid = MdsPersianDateTimePicker.newGuid();
     this.element = element;
     this.element.setAttribute("data-mds-dtp-guid", this.guid);
     MdsPersianDateTimePickerData.set(this.guid, this);
+    ['show', 'shown', 'hide', 'hidden'].forEach(e => this.element.addEventListener(`${e}.bs.popover`, this.trackTransition));
+    this.element.addEventListener('keydown', this.keydownEvent);
 
     this.initializeBsPopover(setting);
   }
@@ -430,6 +438,20 @@ data-bs-toggle="dropdown" aria-expanded="false">
   private bsModal: Modal | null = null;
   private tempTitleString = '';
 
+  // وضعیت انیمیشن پاپ‌آور/مدال بوت استرپ. در میانه‌ی انیمیشن نباید اینستنس بوت استرپ dispose شود،
+  // چون callback پایان انیمیشن هنوز به فیلدهای آن (مثل _activeTrigger) دسترسی دارد
+  private phase: 'hidden' | 'showing' | 'shown' | 'hiding' = 'hidden';
+  private rebuildTimer: ReturnType<typeof setTimeout> | undefined;
+  private modalTimer: ReturnType<typeof setTimeout> | undefined;
+  private contentTimer: ReturnType<typeof setTimeout> | undefined;
+  private inLineTimer: ReturnType<typeof setTimeout> | undefined;
+  private rebuildPending = false;
+  private showPending = false;
+  private disposed = false;
+  private disposeWhenSettled = false;
+  private documentEventsEnabled = false;
+  private offcanvasElement: Element | null = null;
+
   // #endregion
 
   // #region Methods
@@ -475,8 +497,31 @@ data-bs-toggle="dropdown" aria-expanded="false">
 
     // ---------------------
 
-    setTimeout(() => {
-      this.dispose();
+    // چند بروزرسانی پشت سر هم فقط یک بار تقویم را می‌سازند و آخرین تنظیمات اعمال می‌شود
+    if (this.rebuildTimer !== undefined)
+      clearTimeout(this.rebuildTimer);
+    this.rebuildTimer = setTimeout(() => {
+      this.rebuildTimer = undefined;
+      this.rebuild();
+    }, setting.inLine ? 10 : 100);
+  }
+  private rebuild(): void {
+    if (this.disposed) return;
+    const setting = this.setting;
+    if (this.phase === 'showing' || this.phase === 'hiding') {
+      // بعد از پایان انیمیشن (رویداد shown یا hidden) دوباره ساخته می‌شود
+      this.rebuildPending = true;
+      return;
+    }
+    if (this.phase === 'shown' && (this.bsPopover != null || this.bsModal != null)) {
+      // تقویم باز را با انیمیشن عادی می‌بندیم و بعد از hidden می‌سازیم
+      this.rebuildPending = true;
+      this.hide();
+      return;
+    }
+    this.rebuildPending = false;
+    {
+      this.teardownBootstrap();
       const title = this.getPopoverHeaderTitle(setting);
       let datePickerBodyHtml = this.getDateTimePickerBodyHtml(setting);
       let tempDiv = document.createElement('div');
@@ -496,9 +541,10 @@ data-bs-toggle="dropdown" aria-expanded="false">
       if (setting.modalMode == true) {
         this.setModalHtml(title, datePickerBodyHtml, setting);
         this.bsPopover = null;
-        setTimeout(() => {
+        this.modalTimer = setTimeout(() => {
+          this.modalTimer = undefined;
           const el = this.getModal();
-          if (el != null) {
+          if (el != null && !this.disposed) {
             this.bsModal = new Modal(el);
             this.enableMainEvents();
           }
@@ -508,8 +554,13 @@ data-bs-toggle="dropdown" aria-expanded="false">
         this.element.innerHTML = datePickerBodyHtml;
         this.enableInLineEvents();
       } else {
+        // داخل مدال یا offcanvas بوت استرپ، پاپ‌آور باید داخل همان المان باشد؛ در غیر این صورت
+        // focus trap آن‌ها فوکوس را از تکس‌باکس ساعت داخل پاپ‌آور پس می‌گیرد
+        const dialog = this.element.closest('.modal, .offcanvas');
+        this.offcanvasElement = dialog?.classList.contains('offcanvas') ? dialog : null;
+        this.offcanvasElement?.addEventListener('hide.bs.offcanvas', this.dialogHideEvent);
         this.bsPopover = new Popover(this.element, {
-          container: 'body',
+          container: <HTMLElement>dialog ?? 'body',
           content: datePickerBodyHtml,
           title: title,
           html: true,
@@ -522,7 +573,67 @@ data-bs-toggle="dropdown" aria-expanded="false">
       }
       MdsPersianDateTimePicker.setSelectedData(setting);
       this.tempTitleString = title;
-    }, setting.inLine ? 10 : 100);
+    }
+    if (this.showPending) {
+      this.showPending = false;
+      this.show();
+    }
+  }
+  /**
+   * از بین بردن اینستنس بوت استرپ؛ فقط وقتی پاپ‌آور/مدال در حال انیمیشن نیست
+   */
+  private teardownBootstrap(): void {
+    this.disableEvents();
+    if (this.contentTimer !== undefined) {
+      clearTimeout(this.contentTimer);
+      this.contentTimer = undefined;
+    }
+    if (this.modalTimer !== undefined) {
+      clearTimeout(this.modalTimer);
+      this.modalTimer = undefined;
+    }
+    this.offcanvasElement?.removeEventListener('hide.bs.offcanvas', this.dialogHideEvent);
+    this.offcanvasElement = null;
+    if (this.bsPopover != null)
+      this.bsPopover.dispose();
+    if (this.bsModal != null)
+      this.bsModal.dispose();
+    this.element.removeEventListener('click', this.showPopoverEvent, true);
+    this.bsPopover = null;
+    this.bsModal = null;
+    this.phase = 'hidden';
+  }
+  private trackTransition = (e: Event): void => {
+    if (e.target !== this.element && e.target !== this.getModal()) return;
+    const previous = this.phase;
+    const type = e.type.split('.')[0];
+    this.phase = type == 'show' ? 'showing' : type == 'shown' ? 'shown' : type == 'hide' ? 'hiding' : 'hidden';
+    if (type == 'show' || type == 'hide') {
+      // کلیک روی روزها از شروع باز شدن پذیرفته می‌شود، نه بعد از پایان انیمیشن
+      if (type == 'show') this.enableEvents();
+      // اگر رویداد لغو شود، انیمیشنی شروع نشده است
+      queueMicrotask(() => {
+        if (!e.defaultPrevented || this.phase != (type == 'show' ? 'showing' : 'hiding')) return;
+        this.phase = previous;
+        if (type == 'show') this.disableEvents();
+      });
+      return;
+    }
+    if (this.disposeWhenSettled) {
+      this.disposeWhenSettled = false;
+      this.teardownBootstrap();
+      this.finishDispose();
+      return;
+    }
+    if (this.rebuildPending) {
+      this.rebuild();
+    } else if (type == 'hidden' && this.showPending) {
+      this.showPending = false;
+      this.show();
+    }
+  }
+  private dialogHideEvent = (): void => {
+    this.hide();
   }
   static newGuid(): string {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -1757,7 +1868,11 @@ data-bs-toggle="dropdown" aria-expanded="false">
         console.error("mds.bs.datetimepicker: `BsPopoverInstance` is null!");
         return;
       }
-      setTimeout(() => {
+      if (this.contentTimer !== undefined)
+        clearTimeout(this.contentTimer);
+      this.contentTimer = setTimeout(() => {
+        this.contentTimer = undefined;
+        if (popover !== this.bsPopover) return;
         popover.setContent({
           '.popover-header': dtpInlineHeader,
           '.popover-body': calendarHtml
@@ -2042,6 +2157,7 @@ data-bs-toggle="dropdown" aria-expanded="false">
         console.error("mds.bs.datetimepicker: `modalElement` not found!");
         return;
       }
+      ['show', 'shown', 'hide', 'hidden'].forEach(e => modalElement.addEventListener(`${e}.bs.modal`, this.trackTransition));
       modalElement.addEventListener('shown.bs.modal', this.popoverOrModalShownEvent);
       modalElement.addEventListener('hidden.bs.modal', this.popoverOrModalHiddenEvent);
     }
@@ -2052,15 +2168,19 @@ data-bs-toggle="dropdown" aria-expanded="false">
     if (!instance) return;
     const setting = instance.setting;
     this.hideYearsBox(element, setting);
-  }
-  private popoverOrModalShownEvent = (): void => {
+    this.getPickerContainer()?.addEventListener('keydown', this.keydownEvent);
     this.enableEvents();
   }
-  private popoverOrModalHiddenEvent = (): void => {
+  private popoverOrModalShownEvent = (e: Event): void => {
+    if (e.target !== this.element && e.target !== this.getModal()) return;
+    this.enableEvents();
+  }
+  private popoverOrModalHiddenEvent = (e: Event): void => {
+    if (e.target !== this.element && e.target !== this.getModal()) return;
     this.disableEvents();
     // بعد از بسته شدن پاپ‌آور، محتوای ذخیره شده‌ی آن (که هنگام باز شدن مجدد نمایش داده می‌شود)
     // با آخرین مقادیر تنظیمات (مثلا ساعتی که کاربر تایپ کرده) به‌روزرسانی می‌شود
-    if (!this.setting.inLine && !this.setting.modalMode)
+    if (!this.setting.inLine && !this.setting.modalMode && !this.rebuildPending && !this.disposeWhenSettled)
       this.updateCalendarBodyHtml(this.element, this.setting, true);
   }
   private attachTimeInputEvents(input: Element): void {
@@ -2069,9 +2189,24 @@ data-bs-toggle="dropdown" aria-expanded="false">
   private detachTimeInputEvents(input: Element): void {
     mdsDetachTimeMask(<HTMLInputElement>input);
   }
+  /**
+   * المانی که تقویم این اینستنس داخل آن رندر شده (پاپ‌آور، مدال یا خود المان در حالت inLine)
+   */
+  private getPickerContainer(): Element | null {
+    if (this.setting.inLine)
+      return this.element;
+    if (this.setting.modalMode)
+      return this.getModal();
+    const popoverId = this.element.getAttribute('aria-describedby');
+    return popoverId ? document.getElementById(popoverId) : null;
+  }
   private enableInLineEvents(): void {
     if (!this.setting.inLine) return;
-    setTimeout(() => {
+    if (this.inLineTimer !== undefined)
+      clearTimeout(this.inLineTimer);
+    this.inLineTimer = setTimeout(() => {
+      this.inLineTimer = undefined;
+      if (this.disposed) return;
       const dtp = document.querySelector(`[data-mds-dtp-guid="${this.guid}"]`);
       if (dtp != null) {
         const timeInput = dtp.querySelector('[data-mds-dtp-time]');
@@ -2082,19 +2217,30 @@ data-bs-toggle="dropdown" aria-expanded="false">
     }, 100);
   }
   private enableEvents(): void {
-    if (this.setting.inLine) return;
-    setTimeout(() => {
+    if (this.setting.inLine || this.disposed) return;
+    // شنونده‌ها از رویداد show ثبت می‌شوند (و برای محتوای تازه دوباره در inserted و shown)؛ با تاخیر، کلیک‌های
+    // اول روی روزها گم می‌شد و اگر تقویم زودتر بسته می‌شد، شنونده‌ها بعد از بسته شدن اضافه می‌شدند و باقی می‌ماندند
+    if (!this.documentEventsEnabled) {
+      this.documentEventsEnabled = true;
       document.addEventListener('click', this.selectCorrectClickEvent, false);
-      document.querySelector('html')!.addEventListener('click', this.hidePopoverEvent, true);
-      document.querySelectorAll('[data-mds-dtp-time]').forEach(e => this.attachTimeInputEvents(e));
-      document.querySelectorAll('[data-mds-dtp] [data-day]').forEach(e => e.addEventListener('mouseenter', this.hoverOnDays, true));
-    }, 500);
+      document.documentElement.addEventListener('click', this.hidePopoverEvent, true);
+    }
+    const container = this.getPickerContainer();
+    container?.querySelectorAll('[data-mds-dtp-time]').forEach(e => this.attachTimeInputEvents(e));
+    container?.querySelectorAll('[data-day]').forEach(e => e.addEventListener('mouseenter', this.hoverOnDays, true));
   }
   private disableEvents(): void {
-    document.removeEventListener('click', this.selectCorrectClickEvent);
-    document.querySelector('html')!.removeEventListener('click', this.hidePopoverEvent);
-    document.querySelectorAll('[data-mds-dtp-time]')?.forEach(e => this.detachTimeInputEvents(e));
-    document.querySelectorAll('[data-mds-dtp] [data-day]').forEach(e => e.removeEventListener('mouseenter', this.hoverOnDays));
+    this.documentEventsEnabled = false;
+    document.removeEventListener('click', this.selectCorrectClickEvent, false);
+    document.documentElement.removeEventListener('click', this.hidePopoverEvent, true);
+    // فقط تکس‌باکس‌های ساعت همین تقویم؛ قبلا ماسک ساعت تقویم‌های inLine دیگر هم برداشته می‌شد
+    const container = this.getPickerContainer();
+    container?.querySelectorAll('[data-mds-dtp-time]').forEach(e => this.detachTimeInputEvents(e));
+    container?.querySelectorAll('[data-day]').forEach(e => e.removeEventListener('mouseenter', this.hoverOnDays, true));
+    if (this.inLineTimer !== undefined) {
+      clearTimeout(this.inLineTimer);
+      this.inLineTimer = undefined;
+    }
     const dtp = document.querySelector(`[data-mds-dtp-guid="${this.guid}"]`);
     if (dtp != null) {
       dtp.removeEventListener('click', this.selectCorrectClickEvent, false);
@@ -2105,7 +2251,9 @@ data-bs-toggle="dropdown" aria-expanded="false">
     const element = <Element>e.target;
     const instance = MdsPersianDateTimePicker.getInstance(element);
     if (!instance) return;
-    if (instance != null && (instance.setting.disabled || instance.element.getAttribute('disabled') != undefined))
+    // هر اینستنس فقط کلیک‌های تقویم خودش را پردازش می‌کند
+    if (instance !== this) return;
+    if (instance.setting.disabled || instance.element.getAttribute('disabled') != undefined)
       return;
     if (element.getAttribute('mds-pdtp-select-year-button') != null) {
       instance.showYearsBox(element);
@@ -2122,9 +2270,10 @@ data-bs-toggle="dropdown" aria-expanded="false">
     }
   }
   private showPopoverEvent = (e: Event): void => {
-    MdsPersianDateTimePickerData.getAll().forEach(i => i.hide());
     const element = <Element>e.target;
     const instance = MdsPersianDateTimePicker.getInstance(element);
+    // تقویم‌های دیگر بسته می‌شوند؛ تقویمی که روی آن کلیک شده اگر باز است باز می‌ماند
+    MdsPersianDateTimePickerData.getAll().forEach(i => { if (i !== instance) i.hide(); });
     if (!instance || instance.setting.disabled)
       return;
     instance.show();
@@ -2132,19 +2281,38 @@ data-bs-toggle="dropdown" aria-expanded="false">
   private hidePopoverEvent = (e: Event): void => {
     const element = <Element>e.target;
     if (element.tagName == 'HTML') {
-      MdsPersianDateTimePickerData.getAll().forEach(i => { if (!i.setting.modalMode) i.hide(); });
+      if (!this.setting.modalMode) this.hide();
       return;
     }
     const isWithinDatePicker = element.closest('[data-mds-dtp]') != null || element.getAttribute('data-mds-dtp-guid') != null || element.getAttribute('data-mds-dtp-go-today') != null;
     if (!isWithinDatePicker) {
-      MdsPersianDateTimePickerData.getAll().forEach(i => i.hide());
+      this.hide();
     }
+  }
+  private keydownEvent = (e: Event): void => {
+    // Escape تقویم باز را می‌بندد و فوکوس روی المان تقویم برمی‌گردد؛
+    // رویداد به مدال یا offcanvas والد نمی‌رسد تا آن‌ها هم‌زمان بسته نشوند
+    const ke = <KeyboardEvent>e;
+    if (ke.key !== 'Escape' || this.setting.inLine || this.setting.modalMode) return;
+    if (this.phase !== 'shown' && this.phase !== 'showing') return;
+    ke.preventDefault();
+    ke.stopPropagation();
+    this.hide();
+    (<HTMLElement>this.element).focus?.();
   }
 
   /**
    * نمایش تقویم
    */
   show(): void {
+    if (this.disposed) return;
+    if (this.phase === 'showing' || this.phase === 'shown') return;
+    if (this.phase === 'hiding') {
+      // نمایش در میانه‌ی بسته شدن، پاپ‌آور تازه را با callback پایان hide از بین می‌برد؛
+      // بعد از hidden نمایش داده می‌شود
+      this.showPending = true;
+      return;
+    }
     this.bsModal?.show();
     this.bsPopover?.show();
   }
@@ -2152,20 +2320,25 @@ data-bs-toggle="dropdown" aria-expanded="false">
    * مخفی کردن تقویم
    */
   hide(): void {
+    this.showPending = false;
     this.bsModal?.hide();
     this.bsPopover?.hide();
   }
   /**
-   * مخفی یا نمایش تقویم 
+   * مخفی یا نمایش تقویم
    */
   toggle(): void {
     if (this.bsPopover == null) return;
-    this.bsPopover.toggle();
+    if (this.phase === 'showing' || this.phase === 'shown')
+      this.hide();
+    else
+      this.show();
   }
   /**
    * فعال کردن تقویم
    */
   enable(): void {
+    if (this.disposed) return;
     this.setting.disabled = false;
     this.element.removeAttribute("disabled");
     MdsPersianDateTimePickerData.set(this.guid, this);
@@ -2176,6 +2349,7 @@ data-bs-toggle="dropdown" aria-expanded="false">
    * غیر فعال کردن تقویم
    */
   disable(): void {
+    if (this.disposed) return;
     this.setting.disabled = true;
     this.element.setAttribute("disabled", '');
     MdsPersianDateTimePickerData.set(this.guid, this);
@@ -2199,13 +2373,38 @@ data-bs-toggle="dropdown" aria-expanded="false">
    * از بین بردن تقویم
    */
   dispose(): void {
-    if (this.bsPopover != null)
-      this.bsPopover.dispose();
-    if (this.bsModal != null)
-      this.bsModal.dispose();
-    this.element.removeEventListener('click', this.showPopoverEvent);
-    this.bsPopover = null;
-    this.bsModal = null;
+    if (this.disposed) return;
+    this.disposed = true;
+    // کارهای زمان‌بندی شده بعد از dispose اجرا نمی‌شوند و تقویم را دوباره نمی‌سازند
+    if (this.rebuildTimer !== undefined) {
+      clearTimeout(this.rebuildTimer);
+      this.rebuildTimer = undefined;
+    }
+    this.rebuildPending = false;
+    this.showPending = false;
+    MdsPersianDateTimePickerData.remove(this.guid);
+    this.element.removeEventListener('keydown', this.keydownEvent);
+    if (this.phase === 'showing' || this.phase === 'hiding') {
+      // اینستنس بوت استرپ بعد از پایان انیمیشن (رویداد shown یا hidden) از بین می‌رود
+      this.disposeWhenSettled = true;
+      this.disableEvents();
+      this.removeElementAttributes();
+      return;
+    }
+    this.teardownBootstrap();
+    this.removeElementAttributes();
+    this.finishDispose();
+  }
+  private removeElementAttributes(): void {
+    if (this.element.getAttribute('data-mds-dtp-guid') !== this.guid) return;
+    ['data-mds-dtp-guid', 'data-mds-dtp-group', 'data-to-date', 'data-from-date'].forEach(a => this.element.removeAttribute(a));
+  }
+  private finishDispose(): void {
+    ['show', 'shown', 'hide', 'hidden'].forEach(e => this.element.removeEventListener(`${e}.bs.popover`, this.trackTransition));
+    this.element.removeEventListener('shown.bs.popover', this.popoverOrModalShownEvent);
+    this.element.removeEventListener('hidden.bs.popover', this.popoverOrModalHiddenEvent);
+    this.element.removeEventListener('inserted.bs.popover', this.popoverInsertedEvent);
+    document.querySelector(`.modal[data-mds-dtp-guid="${this.guid}"]`)?.remove();
   }
   /**
    * دریافت اینستنس پاپ آور بوت استرپ
@@ -2252,7 +2451,6 @@ data-bs-toggle="dropdown" aria-expanded="false">
   */
   setDatePersian(yearPersian: number, monthPersian: number, dayPersian: number): void {
     const gregorianDateJson = MdsPersianDateTimePicker.toGregorian(yearPersian, monthPersian, dayPersian);
-    console.log(gregorianDateJson);
     const date = new Date(gregorianDateJson.gy, gregorianDateJson.gm - 1, gregorianDateJson.gd);
     this.updateOptions({
       selectedDate: date,
@@ -2284,6 +2482,7 @@ data-bs-toggle="dropdown" aria-expanded="false">
    * @param value مقدار
    */
   updateOption(optionName: string, value: any): void {
+    if (this.disposed) return;
     if (!optionName) return;
     value = MdsPersianDateTimePicker.correctOptionValue(optionName, value);
     (<any>this.setting)[optionName] = value;
@@ -2295,6 +2494,7 @@ data-bs-toggle="dropdown" aria-expanded="false">
    * @param options تنظیمات مورد نظر
    */
   updateOptions(options: any): void {
+    if (this.disposed) return;
     Object.keys(options).forEach((key) => {
       (<any>this.setting)[key] = MdsPersianDateTimePicker.correctOptionValue(key, (<any>options)[key]);
     });
@@ -2596,6 +2796,13 @@ function mdsAttachTimeMask(input: HTMLInputElement, onCommit: (value: string) =>
       const selStart = isHourSegment ? 0 : 3;
       const selEnd = isHourSegment ? 2 : 5;
       setTimeout(() => input.setSelectionRange(selStart, selEnd), 0);
+      return;
+    }
+
+    if (ke.key === 'Enter' && input.hasAttribute('data-mds-dtp-time')) {
+      // Enter در تکس‌باکس ساعتِ خود تقویم، ساعت را ثبت می‌کند و فرم والد (در حالت inLine) را ارسال نمی‌کند
+      ke.preventDefault();
+      blur();
       return;
     }
 
