@@ -1,33 +1,32 @@
-# MD.BootstrapPersianDateTimePicker
+# MD.BootstrapPersianDateTimePicker — MEDINEM edition
 
-#### Bootstrap 5+ Persian And Gregorian Date Time Picker
+#### Bootstrap 5+ Persian and Gregorian date time picker
 
-Major changes:
+Maintained by **Mehdi** ([@MEDINEM](https://github.com/MEDINEM)).
+Repository: https://github.com/MEDINEM/MD.BootstrapPersianDateTimePicker
 
-1. Using Bootstrap 5
-2. jQuery Removed
-3. Rewrite all codes, better performance
+This edition is version `5.0.1+rased.1`. It fixes transition-safe updates, clean disposal,
+listener lifecycle, focus inside modals and offcanvas, and keyboard handling, and every fix is
+covered by a cross-browser regression suite. [RASED_PATCHES.md](RASED_PATCHES.md) lists each
+fix with its test.
 
-![MD.BootstrapPersianDateTimePicker](https://mds92.github.io/MD.BootstrapPersianDateTimePicker/images/date-picker-white.png)
-[Demo](https://mds92.github.io/MD.BootstrapPersianDateTimePicker/)
+![MD.BootstrapPersianDateTimePicker](images/MdPersianDateTimePickerModalMode.jpg)
+![MD.BootstrapPersianDateTimePicker](images/MdPersianDateTimePicker.jpg)
 
-![MD.BootstrapPersianDateTimePicker](https://raw.githubusercontent.com/Mds92/MD.BootstrapPersianDateTimePicker/master-bs5/images/MdPersianDateTimePickerModalMode.jpg)
-![MD.BootstrapPersianDateTimePicker](https://raw.githubusercontent.com/Mds92/MD.BootstrapPersianDateTimePicker/master-bs5/images/MdPersianDateTimePicker.jpg)
-
-##### NOTE:
-
-Bootstrap 3 version `https://github.com/Mds92/MD.BootstrapPersianDateTimePicker/tree/master-bs3`<br>
-Bootstrap 4 version `https://github.com/Mds92/MD.BootstrapPersianDateTimePicker/tree/master-bs4`
+A demo page is in [`demo/demo.html`](demo/demo.html).
 
 ### Installing:
 
 First you have to install `Bootstrap 5` and link it to your html file.
 
-Then you can install latest version of the library via npm:
+This edition is not published to npm. Build it from this repository:
 
-**_npm install md.bootstrappersiandatetimepicker@latest_**
+```bash
+npm ci --ignore-scripts
+npm run build
+```
 
-Now add these files to you html:
+Now add the files from `dist/` to your html:
 
 ```html
 <link href="/dist/mds.bs.datetimepicker.style.css" rel="stylesheet" />
@@ -228,6 +227,7 @@ Default values are into `[ ]`
 
 <hr>
 
-### Backend:
+### License
 
-If you are using .net in your backend I suggest you https://github.com/Mds92/MD.PersianDateTime to handle PersianDateTime as easy as DateTime.
+MIT. This edition is derived from MD.BootstrapPersianDateTimePicker by Mohammad Dayyan; the
+copyright notice in the built files is kept as the MIT license requires.
