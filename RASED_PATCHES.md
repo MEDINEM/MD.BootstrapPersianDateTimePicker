@@ -36,8 +36,9 @@ build. Run the suite against the upstream files to see it (see **Checking a patc
    opened: a day tapped in that window was ignored, and if the popover closed first the
    listeners were added after it closed and never removed. A picker with leaked listeners then
    handled clicks inside every other picker as well, writing the selection twice and putting the
-   other picker's calendar into its own popover. Listeners are now registered on `shown`, removed
-   on `hidden` with matching capture flags, scoped to the picker's own popover, and each picker
+   other picker's calendar into its own popover. Listeners are now registered when opening starts
+   (`show`, so a day tapped during the fade-in counts), removed on `hidden` with matching capture
+   flags, scoped to the picker's own popover, and each picker
    handles only clicks on its own calendar. Hiding a popover no longer strips the time mask from
    other pickers' time boxes. Clicking the field of an open picker keeps it open instead of
    starting a hide and a show at once, which left nothing visible.
@@ -80,6 +81,21 @@ npm test               # Chromium, Firefox, WebKit, iPhone 13 and Pixel 7 emulat
 `src/` is checked out with LF on every OS (`.gitattributes`), so the source maps, which embed
 the sources, are identical on Windows and Linux. CI fails if the committed `dist/*.js` or
 `dist/*.css` differ from a fresh build.
+
+## Built files
+
+SHA-256 of `dist/` as built from commit `553d6778fb22d4d7787472a05d1d43dd32554cc7` (unchanged by
+later documentation-only commits). CI rebuilds on Linux and fails if the JS or CSS differ.
+
+| File | SHA-256 |
+| --- | --- |
+| `mds.bs.datetimepicker.js` | `24fa03d378598a3c8b4ed1900a5dc415baec88916727687cfaf3002d92c040ed` |
+| `mds.bs.datetimepicker.js.map` | `b4398815e48f8c230b41954df4cfbb38d86643f77af7c588eb49e015196f2efb` |
+| `mds.bs.datetimepicker.style.css` | `3a6d67d6b00a7b5381ef49755b6c3db58f39f005d0e1da258a6a254e95725838` |
+| `mds.bs.datetimepicker.style.css.map` | `1829e63a6f5018845bcfbc51f6331624954adaefcb2c0bc7edd082b8de459f5f` |
+
+The source maps reference only `webpack://md.bootstrappersiandatetimepicker/...` paths and embed
+the MIT-licensed sources; they contain no machine paths.
 
 ## Checking a patch
 
